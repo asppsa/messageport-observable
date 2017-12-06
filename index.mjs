@@ -95,7 +95,7 @@ const filteringPort = wrapper
         newFilter = arguments[1];
       }
 
-      const clone = this.wrapper(this);
+      const clone = this.wrapper.props({ autostart: false })(this);
       clone.eventFilters[type] = newFilter;
 
       return clone;
@@ -140,6 +140,9 @@ const filteringPort = wrapper
   });
 
 const observablePort = stampit()
+  .props({
+    autostart: true
+  })
   .init(function(_, { instance }) {
     // Add standardised observable accessor, if poss.
     if (typeof Symbol === 'function' && Symbol.observable)
@@ -155,7 +158,8 @@ const observablePort = stampit()
           const messageErrorCb = observer.error.bind(observer);
           this.addEventListener('message', messageCb);
           this.addEventListener('messageerror', messageErrorCb);
-          if (this.start)
+
+          if (this.autostart && this.start)
             this.start();
 
           return () => {
