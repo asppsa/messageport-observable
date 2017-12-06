@@ -6,8 +6,11 @@
   <body>
     <h1>In the iframe</h1>
     <script>
-      let port1 = MessagePortObservable.wrapWindow(window);
-      port1.postMessageWithReply('test', replyPort => {
+      const wrapWindow = MessagePortObservable.wrapWindow;
+      const wrapPort = MessagePortObservable.wrapPort;
+      const parentPort = wrapWindow(window);
+
+      parentPort.postMessageWithReply('test', replyPort => {
         replyPort.observable.subscribe({
           next(x) {
             console.log('next', x);
@@ -15,18 +18,19 @@
         })
       });
 
-      let sharedWorker = new SharedWorker('increment.js');
-      let swPort = MessagePortObservable.wrapPort(sharedWorker.port);
-      swPort.postMessageWithReply('hi', replyPort => {
-        replyPort.observable.subscribe({
-          next(x) {
-            console.log('increment via iframe:', x.data);
-          },
-          error(e) {
-            console.error(e);
-          }
+      const sharedWorker = new SharedWorker('increment.js');
+      const swPort = wrapPort(sharedWorker.port);
+
+      for (let i = 0; i < 10; i ++) {
+        swPort.postMessageWithReply('inc', replyPort => {
+          let sub = replyPort.observable.subscribe({
+            next(x) {
+              console.log('increment ' + i + ' via iframe:', x.data);
+              sub.unsubscribe();
+            }
+          });
         });
-      });
+      }
     </script>
   </body>
 </html>
