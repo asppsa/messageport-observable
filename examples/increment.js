@@ -17,4 +17,6 @@ self.onconnect = function(connectEvent) {
       x -= 1;
       return [`dec ${x}`];
     });
+
+  port.start();
 };

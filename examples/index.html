@@ -36,6 +36,8 @@
               sub.unsubscribe();
             }
           });
+
+        replyPort.start();
       });
 
       workerPort.postMessageWithReply('pong', replyPort => {
@@ -47,6 +49,8 @@
               sub.unsubscribe();
             }
           });
+
+        replyPort.start();
       });
 
       let sharedWorker = new SharedWorker('increment.js');
