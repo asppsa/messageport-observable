@@ -2,18 +2,133 @@ import stampit from '@stamp/it';
 import Observable from 'zen-observable';
 
 /**
- * This is a lightweight wrapper around MessagePort / Window / Worker objects
- * (things that have a postMessage method).
+ * This is a "lightweight" (is it?) wrapper around MessagePort / Window / Worker
+ * objects (things that have a postMessage method).
  */
+
+/**
+ * This is used to ensure that when the wrapped object is set, method bindings
+ * happen
+ */
+const wrapper = stampit()
+  .props({ isWrapped: true })
+  .propertyDescriptors({
+    wrapped: {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return null;
+      },
+      set(obj) {
+        if (!obj)
+          throw new Error("Cannot set wrapped object to falsy");
+
+        delete this.wrapped;
+        Object.defineProperty(this, 'wrapped', {
+          value: obj,
+          writable: true,
+          configurable: true,
+          enumerable: true
+        });
+      }
+    }
+  })
+  .init(function(_, { instance, stamp }) {
+    instance.wrapper = stamp;
+  })
+  .methods({
+    unwrap() {
+      if (!this.wrapped)
+        throw new Error("No wrapped object in this wrapper");
+
+      return this.wrapped.isWrapped ? this.wrapped.unwrap() : this.wrapped;
+    }
+  });
+
+function filteringPropertyDescriptor(type) {
+  const attribute = 'on' + type;
+
+  return {
+    enumerable: true,
+    configurable: false,
+    get() {
+      return this.wrapped[attribute];
+    },
+    set(listener) {
+      const eventFilter = this.eventFilters[type];
+      if (eventFilter) {
+        this.wrapped[attribute] = function(event) {
+          if (eventFilter.call(this, event))
+            listener.call(this, event);
+        };
+      }
+      else {
+        this.wrapped[attribute] = listener;
+      }
+    }
+  };
+}
 
 // Use a WeakMap if poss.  That way, if the messageport loses the ref to
 // the listener on its own, there's no memory leak
-const MapImpl = typeof WeakMap === 'function' ? WeakMap : Map
+const mapImpl = typeof WeakMap === 'function' ? WeakMap : Map;
 
-const portMethods = ['postMessage', 'addEventListener', 'removeEventListener', 'start', 'close'];
-const portListeners = ['onmessage', 'onmessageerror'];
+/**
+ * This is stamp returns an object that wraps event handlers so that they only
+ * fire when the given filters apply
+ */
+const filteringPort = wrapper
+  .init(function(_, { instance, stamp }) {
+    instance.eventFilters = {};
+    instance.eventListeners = {};
+  })
+  .methods({
+    filter(type, newFilter) {
+      const clone = this.wrapper(this);
+      clone.eventFilters[type] = newFilter;
 
-const wrapper = stampit()
+      return clone;
+    },
+
+    addEventListener(type, listener, options) {
+      if (!this.eventListeners[type])
+        this.eventListeners[type] = new mapImpl();
+
+      // This ensures that we are only notified about events that are considered
+      // safe
+      if (!this.eventListeners[type].has(listener)) {
+        const eventFilter = this.eventFilters[type];
+
+        if (eventFilter) {
+          this.eventListeners[type].set(listener, function(event) {
+            if (eventFilter.call(this, event))
+              listener.call(this, event);
+          });
+        }
+        else {
+          this.eventListeners[type].set(listener, listener);
+        }
+      }
+
+      this.wrapped.addEventListener(
+        type,
+        this.eventListeners[type].get(listener),
+        options);
+    },
+
+    removeEventListener(type, listener, options) {
+      if (this.eventListeners[type] && this.eventListeners[type].has(listener)) {
+        this.wrapped.removeEventListener(type, this.eventListeners[type].get(listener), options);
+        this.eventListeners[type].delete(listener);
+      }
+    }
+  })
+  .propertyDescriptors({
+    onmessage: filteringPropertyDescriptor('message'),
+    onmessageerror: filteringPropertyDescriptor('messageerror')
+  });
+
+const observablePort = stampit()
   .init(function(_, { instance }) {
     // Add standardised observable accessor, if poss.
     if (typeof Symbol === 'function' && Symbol.observable)
@@ -48,34 +163,12 @@ const wrapper = stampit()
 
         return observable;
       }
-    },
-    port: {
-      enumerable: true,
-      configurable: true,
-      get() {
-        return null;
-      },
-      set(port) {
-        delete this.port;
-        Object.defineProperty(this, 'port', {
-          value: port,
-          writable: true,
-          configurable: true,
-          enumerable: true
-        });
-
-        this.bindPort();
-      }
     }
   })
   .methods({
-    unwrap() {
-      return this.port;
-    },
-
     postMessageWithReply(message, listener) {
       const messageChannel = new MessageChannel(),
-        replyPort = wrapPort(messageChannel.port1);
+        replyPort = this.wrapper(messageChannel.port1);
 
       listener(replyPort);
       this.postMessage(message, [messageChannel.port2]);
@@ -95,21 +188,41 @@ const wrapper = stampit()
 
     postMessageWithObservable(message, observable) {
       const messageChannel = new MessageChannel(),
-        postPort = wrapPort(messageChannel.port1);
+        postPort = this.wrapper(messageChannel.port1);
 
       this.postMessage(message, [messageChannel.port2]);
       return postPort.postObservable(observable);
     },
 
     subscribeAndPostReplies(listener, splat = false) {
+      const wrapper = this.wrapper;
       return this.observable.subscribe({
         next(event) {
-          const replyPort = wrapPort(event.ports[0]);
           const response = listener(event);
-          if (response)
+
+          if (response && event.ports[0]) {
+            const replyPort = wrapper(event.ports[0]);
             replyPort.postObservable(Observable.from(response), splat, true);
+          }
         }
       });
+    }
+  });
+
+const filteringObservablePort = filteringPort.compose(observablePort);
+
+/**
+ * A generic wrapper around MessagePort objects (incl. workers)
+ */
+const wrapPort = filteringObservablePort
+  .init(function(port, { instance }) {
+    if (!port)
+      throw new Error("No port given");
+
+    instance.wrapped = port;
+    for (let method of ['postMessage', 'start', 'close']) {
+      if (typeof port[method] === 'function')
+        instance[method] = port[method].bind(port);
     }
   });
 
@@ -119,7 +232,7 @@ const wrapper = stampit()
  * - filters to ensure that all events sent and received have an origin setting.
  * - shims the postMessage method so that it looks like the MessagePort one
  */
-const wrapWindow = wrapper
+const wrapWindow = filteringObservablePort
   .init(function(options, { instance }) {
     if (!options.window)
       throw new Error("No window given");
@@ -127,101 +240,29 @@ const wrapWindow = wrapper
     if (!options.origin || options.origin === "")
       throw new Error("No origin given");
 
-    this.port = options.window;
-    this.origin = options.origin;
-    this.eventFilter = this.origin === '*' ?
-      (() => true) :
-      (event => event.origin === options.origin);
+    // Override the wrapper variable so that subsequently created ports don't
+    // use this constructor.  This can be provided as a parameter if you want to
+    // compose in some stuff.
+    instance.wrapper = options.wrapPort ? options.wrapPort : wrapPort;
 
-    this.eventListeners = {};
-  })
-  .methods({
-    // This is a noop here
-    bindPort() {
-      for (let attr of portListeners) {
-        Object.defineProperty(this, attr, {
-          enumerable: true,
-          configurable: false,
-          get() {
-            return this.port[attr];
-          },
-          set(listener) {
-            const eventFilter = this.eventFilter;
-            this.port[attr] = function(event) {
-              if (eventFilter(event))
-                listener(event);
-            };
-          }
-        });
-      }
-    },
+    instance.wrapped = options.window;
+    instance.origin = options.origin;
 
-    postMessage(message, transferList) {
-      return this.port.postMessage(message, this.origin, transferList);
-    },
-
-    addEventListener(type, listener, options) {
-      if (typeof this.eventListeners[type] === 'undefined')
-        this.eventListeners[type] = new MapImpl();
-
-      // This ensures that we are only notified about events that are considered
-      // safe
-      if (!this.eventListeners[type].has(listener)) {
-        const eventFilter = this.eventFilter;
-        this.eventListeners[type].set(listener, function(event) {
-          if (eventFilter(event))
-            listener(event);
-        });
-      }
-
-      this.port.addEventListener(
-        type,
-        this.eventListeners[type].get(listener),
-        options);
-    },
-
-    removeEventListener(type, listener, options) {
-      if (this.eventListeners[type] && this.eventListeners[type].has(listener)) {
-        this.port.removeEventListener(type, this.eventListeners[type].get(listener), options);
-        this.eventListeners[type].delete(listener);
-      }
+    // Set up initial filters if a specific origin is given.
+    if (instance.origin !== '*') {
+      instance.eventFilters['message'] = instance.eventFilters['messageerror'] =
+        event => event.origin === options.origin;
     }
-  });
-
-/**
- * A wrapper around MessagePort objects (incl. workers)
- */
-const wrapPort = wrapper
-  .init(function(port, { instance }) {
-    if (!port)
-      throw new Error("No port given");
-
-    instance.port = port;
   })
   .methods({
-    bindPort() {
-      for (let method of portMethods) {
-        if (typeof this.port[method] === 'function')
-          this[method] = this.port[method].bind(this.port);
-      }
-
-      for (let attr of portListeners) {
-        Object.defineProperty(this, attr, {
-          enumerable: true,
-          configurable: false,
-          get() {
-            return this.port[attr];
-          },
-          set(value) {
-            this.port[attr] = value;
-          }
-        });
-      }
+    // Provide a compliant postMessage
+    postMessage(message, transferList) {
+      this.wrapped.postMessage(message, this.origin, transferList);
     }
   });
 
 /* Example:
-subscribeAndPostReplies(observable, event => {
+port.subscribeAndPostReplies(observable, event => {
   // Possible return values:
   return [1,2,3,4];
   return new Observable( ... );
