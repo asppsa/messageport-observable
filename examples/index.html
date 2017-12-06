@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="index.js"></script>
+  </head>
+  <body>
+    <h1>Lets go!</h1>
+    <iframe src="iframe.html"></iframe>
+    <script>
+      let iframe = document.querySelector('iframe');
+      let port1 = MessagePortObservable.wrapWindow({
+        window: iframe.contentWindow,
+        origin: '*'
+      });
+      let subscription = port1.subscribeAndPostReplies(event => {
+        console.log('got from iframe:', event);
+        // Should yield each number in sequence to the iframe via a MessagePort
+        return (function*() {
+          yield 1;
+          yield 2;
+          yield 3;
+        })();
+      });
+
+      let worker = new Worker('worker.js');
+      let workerPort = MessagePortObservable.wrapPort(worker);
+      workerPort.postMessageWithReply('ping', replyPort => {
+        replyPort.observable.subscribe({
+          next(x) {
+            console.log('from worker', x);
+          }
+        });
+      });
+
+      let sharedWorker = new SharedWorker('increment.js');
+      sharedWorker.onerror = console.log;
+
+      let swPort = MessagePortObservable.wrapPort(sharedWorker.port);
+      console.log(swPort);
+      swPort.postMessageWithReply('hi', replyPort => {
+        replyPort.observable.subscribe({
+          next(x) {
+            console.log('increment via main window:', x.data);
+          },
+          error(e) {
+            console.error(e);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

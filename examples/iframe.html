@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="index.js"></script>
+  </head>
+  <body>
+    <h1>In the iframe</h1>
+    <script>
+      let port1 = MessagePortObservable.wrapWindow(window);
+      port1.postMessageWithReply('test', replyPort => {
+        replyPort.observable.subscribe({
+          next(x) {
+            console.log('next', x);
+          }
+        })
+      });
+
+      let sharedWorker = new SharedWorker('increment.js');
+      let swPort = MessagePortObservable.wrapPort(sharedWorker.port);
+      swPort.postMessageWithReply('hi', replyPort => {
+        replyPort.observable.subscribe({
+          next(x) {
+            console.log('increment via iframe:', x.data);
+          },
+          error(e) {
+            console.error(e);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
