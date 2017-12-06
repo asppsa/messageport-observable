@@ -914,43 +914,157 @@ var toConsumableArray = function (arr) {
 };
 
 /**
- * This is a lightweight wrapper around MessagePort / Window / Worker objects
- * (things that have a postMessage method).
+ * This is a "lightweight" (is it?) wrapper around MessagePort / Window / Worker
+ * objects (things that have a postMessage method).
  */
+
+/**
+ * This is used to ensure that when the wrapped object is set, method bindings
+ * happen
+ */
+var wrapper = it().props({ isWrapped: true }).propertyDescriptors({
+  wrapped: {
+    enumerable: true,
+    configurable: true,
+    get: function get$$1() {
+      return null;
+    },
+    set: function set$$1(obj) {
+      if (!obj) throw new Error("Cannot set wrapped object to falsy");
+
+      delete this.wrapped;
+      Object.defineProperty(this, 'wrapped', {
+        value: obj,
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
+    }
+  }
+}).init(function (_, _ref) {
+  var instance = _ref.instance,
+      stamp = _ref.stamp;
+
+  instance.wrapper = stamp;
+}).methods({
+  unwrap: function unwrap() {
+    if (!this.wrapped) throw new Error("No wrapped object in this wrapper");
+
+    return this.wrapped.isWrapped ? this.wrapped.unwrap() : this.wrapped;
+  }
+});
+
+function filteringPropertyDescriptor(type) {
+  var attribute = 'on' + type;
+
+  return {
+    enumerable: true,
+    configurable: false,
+    get: function get$$1() {
+      return this.wrapped[attribute];
+    },
+    set: function set$$1(listener) {
+      var eventFilter = this.eventFilters[type];
+      if (eventFilter) {
+        this.wrapped[attribute] = function (event) {
+          if (eventFilter.call(this, event)) listener.call(this, event);
+        };
+      } else {
+        this.wrapped[attribute] = listener;
+      }
+    }
+  };
+}
 
 // Use a WeakMap if poss.  That way, if the messageport loses the ref to
 // the listener on its own, there's no memory leak
-var MapImpl = typeof WeakMap === 'function' ? WeakMap : Map;
+var mapImpl = typeof WeakMap === 'function' ? WeakMap : Map;
 
-var portMethods = ['postMessage', 'addEventListener', 'removeEventListener', 'start', 'close'];
-var portListeners = ['onmessage', 'onmessageerror'];
+/**
+ * This is stamp returns an object that wraps event handlers so that they only
+ * fire when the given filters apply
+ */
+var filteringPort = wrapper.init(function (_, _ref2) {
+  var instance = _ref2.instance,
+      stamp = _ref2.stamp;
 
-var wrapper = it().init(function (_, _ref) {
-  var _this = this;
+  instance.eventFilters = {};
+  instance.eventListeners = {};
+}).methods({
+  filter: function filter() {
+    var newFilter = void 0,
+        type = void 0;
 
-  var instance = _ref.instance;
+    if (arguments.length === 1) {
+      type = 'message';
+      newFilter = arguments[0];
+    } else {
+      type = arguments[0];
+      newFilter = arguments[1];
+    }
+
+    var clone = this.wrapper.props({ autostart: false })(this);
+    clone.eventFilters[type] = newFilter;
+
+    return clone;
+  },
+  addEventListener: function addEventListener(type, listener, options) {
+    if (!this.eventListeners[type]) this.eventListeners[type] = new mapImpl();
+
+    // This ensures that we are only notified about events that are considered
+    // safe
+    if (!this.eventListeners[type].has(listener)) {
+      var eventFilter = this.eventFilters[type];
+
+      if (eventFilter) {
+        this.eventListeners[type].set(listener, function (event) {
+          if (eventFilter.call(this, event)) listener.call(this, event);
+        });
+      } else {
+        this.eventListeners[type].set(listener, listener);
+      }
+    }
+
+    this.wrapped.addEventListener(type, this.eventListeners[type].get(listener), options);
+  },
+  removeEventListener: function removeEventListener(type, listener, options) {
+    if (this.eventListeners[type] && this.eventListeners[type].has(listener)) {
+      this.wrapped.removeEventListener(type, this.eventListeners[type].get(listener), options);
+      this.eventListeners[type].delete(listener);
+    }
+  }
+}).propertyDescriptors({
+  onmessage: filteringPropertyDescriptor('message'),
+  onmessageerror: filteringPropertyDescriptor('messageerror')
+});
+
+var observablePort = it().props({
+  autostart: true
+}).init(function (_, _ref3) {
+  var instance = _ref3.instance;
 
   // Add standardised observable accessor, if poss.
   if (typeof Symbol === 'function' && Symbol.observable) instance[Symbol.observable] = function () {
-    return _this.observable;
+    return instance.observable;
   };
 }).propertyDescriptors({
   observable: {
     enumerable: true,
     configurable: true,
     get: function get$$1() {
-      var _this2 = this;
+      var _this = this;
 
       var observable = new zenObservable(function (observer) {
         var messageCb = observer.next.bind(observer);
         var messageErrorCb = observer.error.bind(observer);
-        _this2.addEventListener('message', messageCb);
-        _this2.addEventListener('messageerror', messageErrorCb);
-        if (_this2.start) _this2.start();
+        _this.addEventListener('message', messageCb);
+        _this.addEventListener('messageerror', messageErrorCb);
+
+        if (_this.autostart && _this.start) _this.start();
 
         return function () {
-          _this2.removeEventListener('message', messageCb);
-          _this2.removeEventListener('messageerror', messageErrorCb);
+          _this.removeEventListener('message', messageCb);
+          _this.removeEventListener('messageerror', messageErrorCb);
         };
       });
 
@@ -964,38 +1078,17 @@ var wrapper = it().init(function (_, _ref) {
 
       return observable;
     }
-  },
-  port: {
-    enumerable: true,
-    configurable: true,
-    get: function get$$1() {
-      return null;
-    },
-    set: function set$$1(port) {
-      delete this.port;
-      Object.defineProperty(this, 'port', {
-        value: port,
-        writable: true,
-        configurable: true,
-        enumerable: true
-      });
-
-      this.bindPort();
-    }
   }
 }).methods({
-  unwrap: function unwrap() {
-    return this.port;
-  },
   postMessageWithReply: function postMessageWithReply(message, listener) {
     var messageChannel = new MessageChannel(),
-        replyPort = wrapPort(messageChannel.port1);
+        replyPort = this.wrapper(messageChannel.port1);
 
     listener(replyPort);
     this.postMessage(message, [messageChannel.port2]);
   },
   postObservable: function postObservable(observable) {
-    var _this3 = this;
+    var _this2 = this;
 
     var splat = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
     var close = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
@@ -1003,14 +1096,14 @@ var wrapper = it().init(function (_, _ref) {
     var complete = close && typeof this.close === 'function' ? this.close.bind(this) : null;
 
     var next = splat ? function (args) {
-      return _this3.postMessage.apply(_this3, toConsumableArray(args));
+      return _this2.postMessage.apply(_this2, toConsumableArray(args));
     } : this.postMessage.bind(this);
 
     return zenObservable.from(observable).subscribe({ complete: complete, next: next, error: complete });
   },
   postMessageWithObservable: function postMessageWithObservable(message, observable) {
     var messageChannel = new MessageChannel(),
-        postPort = wrapPort(messageChannel.port1);
+        postPort = this.wrapper(messageChannel.port1);
 
     this.postMessage(message, [messageChannel.port2]);
     return postPort.postObservable(observable);
@@ -1018,13 +1111,35 @@ var wrapper = it().init(function (_, _ref) {
   subscribeAndPostReplies: function subscribeAndPostReplies(listener) {
     var splat = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
 
+    var wrapper = this.wrapper;
     return this.observable.subscribe({
       next: function next(event) {
-        var replyPort = wrapPort(event.ports[0]);
         var response = listener(event);
-        if (response) replyPort.postObservable(zenObservable.from(response), splat, true);
+
+        if (response && event.ports[0]) {
+          var replyPort = wrapper(event.ports[0]);
+          replyPort.postObservable(zenObservable.from(response), splat, true);
+        }
       }
     });
+  }
+});
+
+var filteringObservablePort = filteringPort.compose(observablePort);
+
+/**
+ * A generic wrapper around MessagePort objects (incl. workers)
+ */
+var wrapPort = filteringObservablePort.init(function (port, _ref4) {
+  var instance = _ref4.instance;
+
+  if (!port) throw new Error("No port given");
+
+  instance.wrapped = port;
+  var _arr = ['postMessage', 'start', 'close'];
+  for (var _i = 0; _i < _arr.length; _i++) {
+    var method = _arr[_i];
+    if (typeof port[method] === 'function') instance[method] = port[method].bind(port);
   }
 });
 
@@ -1034,168 +1149,31 @@ var wrapper = it().init(function (_, _ref) {
  * - filters to ensure that all events sent and received have an origin setting.
  * - shims the postMessage method so that it looks like the MessagePort one
  */
-var wrapWindow = wrapper.init(function (options, _ref2) {
-  var instance = _ref2.instance;
+var wrapWindow = filteringObservablePort.init(function (options, _ref5) {
+  var instance = _ref5.instance;
 
   if (!options.window) throw new Error("No window given");
 
   if (!options.origin || options.origin === "") throw new Error("No origin given");
 
-  this.port = options.window;
-  this.origin = options.origin;
-  this.eventFilter = this.origin === '*' ? function () {
-    return true;
-  } : function (event) {
-    return event.origin === options.origin;
-  };
+  // Override the wrapper variable so that subsequently created ports don't
+  // use this constructor.  This can be provided as a parameter if you want to
+  // compose in some stuff.
+  instance.wrapper = options.wrapPort ? options.wrapPort : wrapPort;
 
-  this.eventListeners = {};
-}).methods({
-  // This is a noop here
-  bindPort: function bindPort() {
-    var _this4 = this;
+  instance.wrapped = options.window;
+  instance.origin = options.origin;
 
-    var _loop = function _loop(attr) {
-      Object.defineProperty(_this4, attr, {
-        enumerable: true,
-        configurable: false,
-        get: function get$$1() {
-          return this.port[attr];
-        },
-        set: function set$$1(listener) {
-          var eventFilter = this.eventFilter;
-          this.port[attr] = function (event) {
-            if (eventFilter(event)) listener(event);
-          };
-        }
-      });
+  // Set up initial filters if a specific origin is given.
+  if (instance.origin !== '*') {
+    instance.eventFilters['message'] = instance.eventFilters['messageerror'] = function (event) {
+      return event.origin === options.origin;
     };
-
-    var _iteratorNormalCompletion = true;
-    var _didIteratorError = false;
-    var _iteratorError = undefined;
-
-    try {
-      for (var _iterator = portListeners[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-        var attr = _step.value;
-
-        _loop(attr);
-      }
-    } catch (err) {
-      _didIteratorError = true;
-      _iteratorError = err;
-    } finally {
-      try {
-        if (!_iteratorNormalCompletion && _iterator.return) {
-          _iterator.return();
-        }
-      } finally {
-        if (_didIteratorError) {
-          throw _iteratorError;
-        }
-      }
-    }
-  },
-  postMessage: function postMessage(message, transferList) {
-    return this.port.postMessage(message, this.origin, transferList);
-  },
-  addEventListener: function addEventListener(type, listener, options) {
-    if (typeof this.eventListeners[type] === 'undefined') this.eventListeners[type] = new MapImpl();
-
-    // This ensures that we are only notified about events that are considered
-    // safe
-    if (!this.eventListeners[type].has(listener)) {
-      var eventFilter = this.eventFilter;
-      this.eventListeners[type].set(listener, function (event) {
-        if (eventFilter(event)) listener(event);
-      });
-    }
-
-    this.port.addEventListener(type, this.eventListeners[type].get(listener), options);
-  },
-  removeEventListener: function removeEventListener(type, listener, options) {
-    if (this.eventListeners[type] && this.eventListeners[type].has(listener)) {
-      this.port.removeEventListener(type, this.eventListeners[type].get(listener), options);
-      this.eventListeners[type].delete(listener);
-    }
   }
-});
-
-/**
- * A wrapper around MessagePort objects (incl. workers)
- */
-var wrapPort = wrapper.init(function (port, _ref3) {
-  var instance = _ref3.instance;
-
-  if (!port) throw new Error("No port given");
-
-  instance.port = port;
 }).methods({
-  bindPort: function bindPort() {
-    var _this5 = this;
-
-    var _iteratorNormalCompletion2 = true;
-    var _didIteratorError2 = false;
-    var _iteratorError2 = undefined;
-
-    try {
-      for (var _iterator2 = portMethods[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-        var method = _step2.value;
-
-        if (typeof this.port[method] === 'function') this[method] = this.port[method].bind(this.port);
-      }
-    } catch (err) {
-      _didIteratorError2 = true;
-      _iteratorError2 = err;
-    } finally {
-      try {
-        if (!_iteratorNormalCompletion2 && _iterator2.return) {
-          _iterator2.return();
-        }
-      } finally {
-        if (_didIteratorError2) {
-          throw _iteratorError2;
-        }
-      }
-    }
-
-    var _loop2 = function _loop2(attr) {
-      Object.defineProperty(_this5, attr, {
-        enumerable: true,
-        configurable: false,
-        get: function get$$1() {
-          return this.port[attr];
-        },
-        set: function set$$1(value) {
-          this.port[attr] = value;
-        }
-      });
-    };
-
-    var _iteratorNormalCompletion3 = true;
-    var _didIteratorError3 = false;
-    var _iteratorError3 = undefined;
-
-    try {
-      for (var _iterator3 = portListeners[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
-        var attr = _step3.value;
-
-        _loop2(attr);
-      }
-    } catch (err) {
-      _didIteratorError3 = true;
-      _iteratorError3 = err;
-    } finally {
-      try {
-        if (!_iteratorNormalCompletion3 && _iterator3.return) {
-          _iterator3.return();
-        }
-      } finally {
-        if (_didIteratorError3) {
-          throw _iteratorError3;
-        }
-      }
-    }
+  // Provide a compliant postMessage
+  postMessage: function postMessage(message, transferList) {
+    this.wrapped.postMessage(message, this.origin, transferList);
   }
 });
 
@@ -1205,3 +1183,4 @@ exports.wrapWindow = wrapWindow;
 Object.defineProperty(exports, '__esModule', { value: true });
 
 })));
+//# sourceMappingURL=index.js.map
