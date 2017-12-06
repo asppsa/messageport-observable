@@ -1,0 +1,38 @@
+{
+  "name": "messageport-observable",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./index",
+  "scripts": {
+    "build": "gulp",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/asppsa/messageport-observable.git"
+  },
+  "keywords": [
+    "MessageChannel",
+    "MessagePort",
+    "postMessage",
+    "Observable",
+    "Worker",
+    "SharedWorker"
+  ],
+  "author": "Alastair Pharo <asppsa@gmail.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "babel-core": "^6.26.0",
+    "babel-plugin-external-helpers": "^6.22.0",
+    "babel-preset-env": "^1.6.1",
+    "gulp": "^3.9.1",
+    "rollup": "^0.52.0",
+    "rollup-plugin-babel": "^3.0.2",
+    "rollup-plugin-commonjs": "^8.2.6",
+    "rollup-plugin-node-resolve": "^3.0.0"
+  },
+  "dependencies": {
+    "@stamp/it": "^1.0.1",
+    "zen-observable": "^0.6.0"
+  }
+}
