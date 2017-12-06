@@ -83,7 +83,18 @@ const filteringPort = wrapper
     instance.eventListeners = {};
   })
   .methods({
-    filter(type, newFilter) {
+    filter() {
+      let newFilter, type;
+
+      if (arguments.length === 1) {
+        type = 'message';
+        newFilter = arguments[0];
+      }
+      else {
+        type = arguments[0];
+        newFilter = arguments[1];
+      }
+
       const clone = this.wrapper(this);
       clone.eventFilters[type] = newFilter;
 
