@@ -19,5 +19,6 @@ gulp.task('default', function() {
       file: './index.js',
       format: 'umd',
       name: 'MessagePortObservable',
+      sourcemap: true
     }));
 });
