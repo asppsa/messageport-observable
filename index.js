@@ -1098,32 +1098,36 @@ var observablePort = it().props({
     var splat = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
     var close = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
 
-    var complete = close && typeof this.close === 'function' ? this.close.bind(this) : null;
+    var complete = close && typeof this.close === 'function' ? function () {
+      return _this2.close();
+    } : undefined;
 
     var next = splat ? function (args) {
       return _this2.postMessage.apply(_this2, toConsumableArray(args));
     } : this.postMessage.bind(this);
 
-    return zenObservable.from(observable).subscribe({ complete: complete, next: next, error: complete });
+    return zenObservable.from(observable).subscribe(next, complete, complete);
   },
   postMessageWithObservable: function postMessageWithObservable(message, observable) {
+    var splat = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
+
     var messageChannel = new MessageChannel(),
         postPort = this.wrapper(messageChannel.port1);
 
     this.postMessage(message, [messageChannel.port2]);
-    return postPort.postObservable(observable);
+    return postPort.postObservable(observable, splat, true);
   },
   subscribeAndPostReplies: function subscribeAndPostReplies(listener) {
     var splat = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
 
     var wrapper = this.wrapper;
-    return this.observable.subscribe({
+    return this.subscribe({
       next: function next(event) {
         var response = listener(event);
 
         if (response && event.ports[0]) {
           var replyPort = wrapper(event.ports[0]);
-          replyPort.postObservable(zenObservable.from(response), splat, true);
+          replyPort.postObservable(response, splat, true);
         }
       }
     });

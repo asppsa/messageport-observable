@@ -195,33 +195,33 @@ const observablePort = stampit()
 
     postObservable(observable, splat = false, close = false) {
       const complete = close && typeof this.close === 'function' ?
-        this.close.bind(this) :
-        null;
+        () => this.close() :
+        undefined;
 
       const next = splat ?
         (args) => this.postMessage(...args) :
         this.postMessage.bind(this);
 
-      return Observable.from(observable).subscribe({ complete, next, error: complete });
+      return Observable.from(observable).subscribe(next, complete, complete);
     },
 
-    postMessageWithObservable(message, observable) {
+    postMessageWithObservable(message, observable, splat=false) {
       const messageChannel = new MessageChannel(),
         postPort = this.wrapper(messageChannel.port1);
 
       this.postMessage(message, [messageChannel.port2]);
-      return postPort.postObservable(observable);
+      return postPort.postObservable(observable, splat, true);
     },
 
     subscribeAndPostReplies(listener, splat = false) {
       const wrapper = this.wrapper;
-      return this.observable.subscribe({
+      return this.subscribe({
         next(event) {
           const response = listener(event);
 
           if (response && event.ports[0]) {
             const replyPort = wrapper(event.ports[0]);
-            replyPort.postObservable(Observable.from(response), splat, true);
+            replyPort.postObservable(response, splat, true);
           }
         }
       });
@@ -279,23 +279,5 @@ const wrapWindow = filteringObservablePort
       this.wrapped.postMessage(message, this.origin, transferList);
     }
   });
-
-/* Example:
-port.subscribeAndPostReplies(observable, event => {
-  // Possible return values:
-  return [1,2,3,4];
-  return new Observable( ... );
-  return (function*() { ... })();
-});
-*/
-
-/* Example:
-somePort.postMessageWithReply('{"my":"message"}', port => {
-  Kefir.fromESObservable(port.observable).take(1).observe(event => {
-    port.postMessage('got it');
-    port.close();
-  });
-});
-*/
 
 export { wrapPort, wrapWindow };
