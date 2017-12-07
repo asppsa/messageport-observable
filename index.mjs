@@ -181,6 +181,10 @@ const observablePort = stampit()
     }
   })
   .methods({
+    subscribe(...args) {
+      return this.observable.subscribe(...args);
+    },
+
     postMessageWithReply(message, listener) {
       const messageChannel = new MessageChannel(),
         replyPort = this.wrapper(messageChannel.port1);

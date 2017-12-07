@@ -1080,6 +1080,11 @@ var observablePort = it().props({
     }
   }
 }).methods({
+  subscribe: function subscribe() {
+    var _observable;
+
+    return (_observable = this.observable).subscribe.apply(_observable, arguments);
+  },
   postMessageWithReply: function postMessageWithReply(message, listener) {
     var messageChannel = new MessageChannel(),
         replyPort = this.wrapper(messageChannel.port1);
