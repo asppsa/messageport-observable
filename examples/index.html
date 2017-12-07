@@ -12,17 +12,29 @@
       const wrapWindow = MessagePortObservable.wrapWindow;
       const wrapPort = MessagePortObservable.wrapPort;
 
+      let windowPort = wrapWindow(window);
       let iframePort = wrapWindow(iframe.contentWindow);
-      let subscription = iframePort.subscribeAndPostReplies(event => {
-        console.log('got from iframe:', event);
-        subscription.unsubscribe();
+      let subscription = windowPort
+        .filter(event => event.source === iframe.contentWindow)
+        .subscribeAndPostReplies(event => {
+          console.log('got from iframe:', event);
+          subscription.unsubscribe();
 
-        // Should yield each number in sequence to the iframe via a MessagePort
-        return (function*() {
-          yield 1;
-          yield 2;
-          yield 3;
-        })();
+          // Should yield each number in sequence to the iframe via a MessagePort
+          return (function*() {
+            yield 1;
+            yield 2;
+            yield 3;
+          })();
+        });
+
+      const myArray = new Int32Array(10);
+      for (let i = 0; i < 10; i ++) {
+        myArray[i] = i;
+      }
+
+      iframe.contentWindow.addEventListener('load', () => {
+        iframePort.postMessage(myArray);
       });
 
       let worker = new Worker('worker.js');
@@ -30,7 +42,7 @@
       workerPort.postMessageWithReply('ping', replyPort => {
         let sub = replyPort
           .filter(event => event.data === 'pong')
-          .observable.subscribe({
+          .subscribe({
             next(x) {
               console.log('pong from worker', x);
               sub.unsubscribe();
@@ -43,7 +55,7 @@
       workerPort.postMessageWithReply('pong', replyPort => {
         let sub = replyPort
           .filter(event => event.data === 'ping')
-          .observable.subscribe({
+          .subscribe({
             next(x) {
               console.log('ping from worker', x);
               sub.unsubscribe();
@@ -60,20 +72,16 @@
 
       for (let i = 0; i < 10; i ++) {
         swPort.postMessageWithReply('inc', replyPort => {
-          let sub = replyPort.observable.subscribe({
-            next(x) {
-              console.log('increment ' + i + ' via main window:', x.data);
-              sub.unsubscribe();
-            }
+          let sub = replyPort.subscribe(x => {
+            console.log('increment ' + i + ' via main window:', x.data);
+            sub.unsubscribe();
           });
         });
 
         swPort.postMessageWithReply('dec', replyPort => {
-          let sub = replyPort.observable.subscribe({
-            next(x) {
-              console.log('decrement ' + i + ' via main window:', x.data);
-              sub.unsubscribe();
-            }
+          let sub = replyPort.subscribe(x => {
+            console.log('decrement ' + i + ' via main window:', x.data);
+            sub.unsubscribe();
           });
         });
       }
