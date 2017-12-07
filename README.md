@@ -1,8 +1,9 @@
 # messageport-observable
 
 This provides some magic wrappers for [MessagePort][1] objects and things that
-resemble them (windows/iframes, Workers).  The wrapped objects still have the
-same API as MessagePorts, but also have some additional features.
+resemble them (windows/iframes, workers, etc.).  The wrapped objects still have
+the same API as MessagePorts, but also have some additional features.
+
 
 ## Wrapping a MessagePort
 
@@ -288,7 +289,7 @@ port using `postObservable`.
 
 ~~~ javascript
 // Handy to use with filter, to only reply to particular messages
-const sub = myPort
+const sub1 = myPort
   .filter(event => event.data === 'ping')
   .subscribeAndPostReplies(event => {
     return new Observable(observer => {
@@ -298,7 +299,13 @@ const sub = myPort
     });
   });
 
-// Necessary if myPort is a MessagePort, due to the filter call.
+const sub2 = myPort
+  .filter(event => event.data === 'gimme5')
+  .subscribeAndPostReplies(() => {
+    return [1,2,3,4,5];
+  });
+
+// Necessary if myPort is a MessagePort, due to the filter calls.
 myPort.start();
 ~~~
 
