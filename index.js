@@ -1117,20 +1117,21 @@ var observablePort = it().props({
     this.postMessage(message, [messageChannel.port2]);
     return postPort.postObservable(observable, splat, true);
   },
+  subscribeWithPort: function subscribeWithPort(listener) {
+    var wrapper = this.wrapper;
+    return this.subscribe(function (event) {
+      var port = event.ports[0];
+      var wrappedPort = port ? wrapper(port) : null;
+      listener(event, wrappedPort);
+    });
+  },
   subscribeAndPostReplies: function subscribeAndPostReplies(listener) {
     var splat = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
 
-    var wrapper = this.wrapper;
-    return this.subscribe({
-      next: function next(event) {
-        var response = listener(event);
-
-        if (response && event.ports[0]) {
-          var replyPort = wrapper(event.ports[0]);
-          replyPort.postObservable(response, splat, true);
-        }
-      }
-    });
+    return this.subscribeWithPort(function (event, replyPort) {
+      var response = listener(event);
+      if (response && replyPort) replyPort.postObservable(response, splat, true);
+    }, splat);
   }
 });
 

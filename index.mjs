@@ -213,18 +213,21 @@ const observablePort = stampit()
       return postPort.postObservable(observable, splat, true);
     },
 
-    subscribeAndPostReplies(listener, splat = false) {
+    subscribeWithPort(listener, splat=false) {
       const wrapper = this.wrapper;
-      return this.subscribe({
-        next(event) {
-          const response = listener(event);
-
-          if (response && event.ports[0]) {
-            const replyPort = wrapper(event.ports[0]);
-            replyPort.postObservable(response, splat, true);
-          }
-        }
+      return this.subscribe(event => {
+        const port = event.ports[0];
+        const wrappedPort = port ? wrapper(port) : null;
+        listener(event, wrappedPort);
       });
+    },
+
+    subscribeAndPostReplies(listener, splat = false) {
+      return this.subscribeWithPort((event, replyPort) => {
+        const response = listener(event);
+        if (response && replyPort)
+          replyPort.postObservable(response, splat, true);
+      }, splat);
     }
   });
 
