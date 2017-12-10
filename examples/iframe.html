@@ -1,43 +1,43 @@
 <!doctype html>
 <html>
-  <head>
-    <script src="index.js"></script>
-  </head>
-  <body>
-    <h1>In the iframe</h1>
-    <script>
-      const wrapWindow = MessagePortObservable.wrapWindow;
-      const wrapPort = MessagePortObservable.wrapPort;
-      const windowPort = wrapWindow(window);
-      const parentPort = wrapWindow(window.parent);
 
-      parentPort.postMessageWithReply('test', replyPort => {
-        replyPort.subscribe({
-          next(x) {
-            console.log('next', x);
-          }
-        })
+<head>
+  <script src="index.js"></script>
+</head>
+
+<body>
+  <h1>In the iframe</h1>
+  <script>
+    const wrapWindow = MessagePortObservable.wrapWindow;
+    const wrapPort = MessagePortObservable.wrapPort;
+    const windowPort = wrapWindow(window);
+    const parentPort = wrapWindow(window.parent);
+
+    parentPort.postMessageWithReply('test').subscribe({
+      next(x) {
+        console.log('next', x);
+      }
+    });
+
+    windowPort
+      .filter(event => event.data instanceof Int32Array)
+      .subscribe(event => {
+        console.log('got array:', event.data);
       });
 
-      windowPort
-        .filter(event => event.data instanceof Int32Array)
-        .subscribe(event => {
-          console.log('got array:', event.data);
-        });
+    const sharedWorker = new SharedWorker('increment.js');
+    const swPort = wrapPort(sharedWorker.port);
 
-      const sharedWorker = new SharedWorker('increment.js');
-      const swPort = wrapPort(sharedWorker.port);
-
-      for (let i = 0; i < 10; i ++) {
-        swPort.postMessageWithReply('inc', replyPort => {
-          let sub = replyPort.subscribe({
-            next(x) {
-              console.log('increment ' + i + ' via iframe:', x.data);
-              sub.unsubscribe();
-            }
-          });
+    for (let i = 0; i < 10; i++) {
+      const sub = swPort.postMessageWithReply('inc')
+        .subscribe({
+          next(x) {
+            console.log('increment ' + i + ' via iframe:', x.data);
+            sub.unsubscribe();
+          }
         });
-      }
-    </script>
-  </body>
+    }
+  </script>
+</body>
+
 </html>

@@ -1003,7 +1003,8 @@ var filteringPort = wrapper.init(function (_, _ref2) {
       newFilter = arguments[1];
     }
 
-    var clone = this.wrapper.props({ autostart: false })(this);
+    var clone = this.wrapper(this);
+    clone.autostart = false;
     clone.eventFilters[type] = newFilter;
 
     return clone;
@@ -1089,8 +1090,8 @@ var observablePort = it().props({
     var messageChannel = new MessageChannel(),
         replyPort = this.wrapper(messageChannel.port1);
 
-    listener(replyPort);
     this.postMessage(message, [messageChannel.port2]);
+    if (listener) listener(replyPort);else return replyPort;
   },
   postObservable: function postObservable(observable) {
     var _this2 = this;

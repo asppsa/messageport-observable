@@ -39,31 +39,29 @@
 
       let worker = new Worker('worker.js');
       let workerPort = wrapPort(worker);
-      workerPort.postMessageWithReply('ping', replyPort => {
-        let sub = replyPort
-          .filter(event => event.data === 'pong')
-          .subscribe({
-            next(x) {
-              console.log('pong from worker', x);
-              sub.unsubscribe();
-            }
-          });
+      let pingReplyPort = workerPort.postMessageWithReply('ping');
+      let pingReplySub = pingReplyPort
+        .filter(event => event.data === 'pong')
+        .subscribe({
+          next(x) {
+            console.log('pong from worker', x);
+            pingReplySub.unsubscribe();
+          }
+        });
 
-        replyPort.start();
-      });
+      pingReplyPort.start();
 
-      workerPort.postMessageWithReply('pong', replyPort => {
-        let sub = replyPort
-          .filter(event => event.data === 'ping')
-          .subscribe({
-            next(x) {
-              console.log('ping from worker', x);
-              sub.unsubscribe();
-            }
-          });
+      let pongReplyPort = workerPort.postMessageWithReply('pong');
+      let pongReplySub = pongReplyPort
+        .filter(event => event.data === 'ping')
+        .subscribe({
+          next(x) {
+            console.log('ping from worker', x);
+            pongReplySub.unsubscribe();
+          }
+        });
 
-        replyPort.start();
-      });
+      pongReplyPort.start();
 
       let sharedWorker = new SharedWorker('increment.js');
       sharedWorker.onerror = console.log;
@@ -71,19 +69,17 @@
       let swPort = wrapPort(sharedWorker.port);
 
       for (let i = 0; i < 10; i ++) {
-        swPort.postMessageWithReply('inc', replyPort => {
-          let sub = replyPort.subscribe(x => {
+        const incReplySub = swPort.postMessageWithReply('inc')
+          .subscribe(x => {
             console.log('increment ' + i + ' via main window:', x.data);
-            sub.unsubscribe();
+            incReplySub.unsubscribe();
           });
-        });
 
-        swPort.postMessageWithReply('dec', replyPort => {
-          let sub = replyPort.subscribe(x => {
+        const decReplySub = swPort.postMessageWithReply('dec')
+          .subscribe(x => {
             console.log('decrement ' + i + ' via main window:', x.data);
-            sub.unsubscribe();
+            decReplySub.unsubscribe();
           });
-        });
       }
     </script>
   </body>
