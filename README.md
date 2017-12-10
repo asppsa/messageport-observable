@@ -251,36 +251,66 @@ somePort.postObservable([1, 2, 3], false, true);
 
 ## Replying to a message
 
-We include a pair of handy methods that can be used to implement basic messaging
-with replies.  This works through a convention whereby:
+We include a few methods that can be used to implement more complex messaging
+patterns, such as replying to messages.  These all make use of the ability to
+transfer MessagePort objects using `postMessage`.  For instance, replying to
+a message can be achieved through the following convention:
 
 1. The sender opens a new MessageChannel, and sends a message along with one
    port from the channel.
 2. The recipient of the message can then use that port to post a stream of
    replies back to the sender.
 
-This is pretty easy to do with this libary as-is.  For convenience though, two
-methods are included with port wrappers:
+This is pretty easy to do with this libary as-is.  For convenience though, the
+following methods are included with port wrappers:
 
-- `postMessageWithReply` takes care of part 1 (above) on the sending port;
-- `subscribeAndPostReplies` takes case of part 2 on the receiving port.
+- `postMessageWithReply` takes care of part 1 (above) on the sending port by
+  creating a MessageChannel and returning a wrapped port that can be filtered,
+  subscribed, etc.
+- `postMessageWithObservable` is similar, but uses the newly opened channel to
+  post a stream of messages, instead of awaiting a reply.
+- `subscribeWithPort` takes care of wrapping incoming ports.  This could be
+  used with either of the above methods.
+- `subscribeAndPostReplies` provides an additional lvel of abstraction over
+  `subscribeWithPort`.
 
-`postMessageWithReply` takes a message and a callback.  The callback will be
-called with a wrapped port on which to receive the replies:
+`postMessageWithReply` takes a message and returns a wrapped port on which to
+receive the replies:
 
 ~~~ javascript
 // Note that replyPort is a wrapped port.
-myPort.postMessageWithReply('hello', replyPort => {
-  const mySub = replyPort.subscribe(({data}) => {
-    console.log(data);
-  });
+const replyPort = myPort.postMessageWithReply('hello');
+const mySub = replyPort.subscribe(({data}) => {
+  console.log(data);
+});
 
-  // Unsubscribe after a while
-  setTimer(mySub.unsubscribe.bind(mySub), 1000);
+// Unsubscribe after a while...
+setTimer(mySub.unsubscribe.bind(mySub), 1000);
+~~~
+
+`postMessageWithObservable` takes a message and an observable.  The message is
+delivered with a newly opened MessagePort, and the observable is streamed to that
+newly opened port using `postObservable`.  As such, the observable object just needs
+to be something that `Observable.from` can understand.  Once the observable completes,
+the newly opened port is closed.
+
+~~~ javascript
+// mySub is a subscription to the observable passed into the function.
+const mySub = myPort.postMessageWithObservable('here are the reports you wanted', new Observable( ... ));
+~~~
+
+`subscribeWithPort` takes a callback and subscribes to a port wrapper.  For each incoming message,
+if a MessagePort has been included, that port will be wrapped.  The callback is then called with the
+message and the wrapped port.  `subscribeWithPort` will return a subscription.
+
+~~~ javascript
+const mySub = port.subscribeWithPort((event, subPort) => {
+  // To post a reply
+  subPort.postMessage(['got', event.data]); 
 });
 ~~~
 
-`subscribeAndPostReplies` takes a callback, subscribes to a port wrapper and
+`subscribeAndPostReplies` takes a callback, subscribes to the port wrapper, and
 calls the callback with each incoming message.  The message is assumed to
 include a port for replying.  The return value of the callback should be
 something that `Observable.from` understands (e.g. an observable, a wrapped port
@@ -308,6 +338,7 @@ const sub2 = myPort
 // Necessary if myPort is a MessagePort, due to the filter calls.
 myPort.start();
 ~~~
+
 
 ## Licence
 
