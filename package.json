@@ -34,5 +34,9 @@
   "dependencies": {
     "@stamp/it": "^1.0.1",
     "zen-observable": "^0.6.0"
+  },
+  "jspm": {
+    "main": "index.mjs",
+    "format": "esm"
   }
 }
