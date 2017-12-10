@@ -95,7 +95,8 @@ const filteringPort = wrapper
         newFilter = arguments[1];
       }
 
-      const clone = this.wrapper.props({ autostart: false })(this);
+      const clone = this.wrapper(this);
+      clone.autostart = false;
       clone.eventFilters[type] = newFilter;
 
       return clone;
