@@ -190,8 +190,11 @@ const observablePort = stampit()
       const messageChannel = new MessageChannel(),
         replyPort = this.wrapper(messageChannel.port1);
 
-      listener(replyPort);
       this.postMessage(message, [messageChannel.port2]);
+      if (listener)
+        listener(replyPort);
+      else
+        return replyPort;
     },
 
     postObservable(observable, splat = false, close = false) {
