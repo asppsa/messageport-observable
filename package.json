@@ -37,6 +37,10 @@
   },
   "jspm": {
     "main": "index.mjs",
-    "format": "esm"
+    "meta": {
+      "index.mjs": {
+        "format": "esm"
+      }
+    }
   }
 }
