@@ -1,4 +1,4 @@
-importScripts('index.js');
+importScripts('messageport-observable.js');
 
 let x = 1;
 

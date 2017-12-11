@@ -1,4 +1,4 @@
-importScripts('index.js');
+importScripts('messageport-observable.js');
 
 const wrapPort = MessagePortObservable.wrapPort;
 
