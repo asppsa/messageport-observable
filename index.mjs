@@ -106,26 +106,28 @@ const filteringPort = wrapper
       if (!this.eventListeners[type])
         this.eventListeners[type] = new mapImpl();
 
-      // This ensures that we are only notified about events that are considered
-      // safe
+      // This ensures that we are only notified about events that haven't been
+      // filtered out
       if (!this.eventListeners[type].has(listener)) {
         const eventFilter = this.eventFilters[type];
 
+        let wrappedListener;
         if (eventFilter) {
-          this.eventListeners[type].set(listener, function(event) {
-            if (eventFilter.call(this, event))
-              listener.call(this, event);
-          });
+          wrappedListener = function(event) {
+            if (eventFilter(event)) {
+              typeof listener.handleEvent === 'function' ?
+                listener.handleEvent(event) :
+                listener(event);
+            }
+          };
         }
         else {
-          this.eventListeners[type].set(listener, listener);
+          wrappedListener = listener;
         }
-      }
 
-      this.wrapped.addEventListener(
-        type,
-        this.eventListeners[type].get(listener),
-        options);
+        this.wrapped.addEventListener(type, wrappedListener, options);
+        this.eventListeners[type].set(listener, wrappedListener);
+      }
     },
 
     removeEventListener(type, listener, options) {
